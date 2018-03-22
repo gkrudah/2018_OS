@@ -1,0 +1,4 @@
+ls
+pwd ; ls
+cat shell.c
+ls -a -l -s
