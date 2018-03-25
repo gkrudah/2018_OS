@@ -35,14 +35,15 @@ int tok_semi()	//token cmdline by semicolon first
 
 	while(temp != NULL)
 	{
+		if(i >= Max_Arg_Num)
+			return -1;
+
 		cmdtok[i++] = temp;
 
 		if(!strcmp(quit, cmdtok[i - 1]))
 			exit(0);
 
-		if(i >= Max_Arg_Num)
-			return -1;
-
+	
 		temp = strtok_r(NULL, Tok_semi, &ptr);
 	}
 
@@ -61,11 +62,12 @@ int tok_space(int cmdnum)	//token cmd by space because of option
 	
 	while(temp)	
 	{
-		realcmd[i++] = temp;
-
 		if(i >= Max_Arg_Num)	//meaningless but for some how
 			return -1;
 
+		realcmd[i++] = temp;
+
+	
 		temp = strtok_r(NULL, Tok_space, &ptr);
 	}
 	
