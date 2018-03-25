@@ -1,9 +1,9 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
-#include <stdlib.h>
 #include <sys/wait.h>
 #include <sys/types.h>
+#include <stdlib.h>
 
 #define Tok_semi ";"
 #define Tok_space " "
@@ -13,7 +13,6 @@ const char *prompt = "prompt>";
 char cmdline[BUFSIZ];
 char *cmdtok[Max_Arg_Num];	//token cmdline by cmd
 char *realcmd[Max_Arg_Num];	//real command to exe
-char *cmdtemp[Max_Arg_Num];	//handling for option
 
 int fatal(char *error)	//error occured exit
 {
@@ -52,7 +51,7 @@ int tok_semi()	//token cmdline by semicolon first
 	return toknum;
 }
 
-int tok_space(int cmdnum, int toknum)	//token cmd by space because of option
+int tok_space(int cmdnum)	//token cmd by space because of option
 {
 	int i = 0;
 	char *ptr;
@@ -108,9 +107,7 @@ int main(int argc, char *argv[])
 
 		for(i = 0;i < toknum;i++)
 		{
-			cmdtemp[i] = cmdtok[i];
-
-			if(tok_space(i, toknum) < 0)
+			if(tok_space(i) < 0)
 				fatal("too many options");
 
 			pid = fork();
