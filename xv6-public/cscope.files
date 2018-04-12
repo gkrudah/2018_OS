@@ -9,14 +9,17 @@
 ./proc.h
 ./defs.h
 ./grep.c
+./test.c
 ./console.c
 ./exec.c
 ./wc.c
 ./umalloc.c
+./my_userapp.c
 ./mmu.h
 ./sleeplock.h
 ./bootmain.c
 ./echo.c
+./user_app.c
 ./trapasm.S
 ./bootasm.S
 ./vectors.S
@@ -40,6 +43,7 @@
 ./usertests.c
 ./spinlock.h
 ./syscall.c
+./test_yield.c
 ./usys.S
 ./mkdir.c
 ./asm.h
@@ -47,6 +51,7 @@
 ./file.h
 ./printf.c
 ./kill.c
+./prac_syscall.c
 ./mkfs.c
 ./ulib.c
 ./bio.c
