@@ -18,7 +18,7 @@ int main()
 	{
 		for(i = 0;i < 100;i++)
 		{
-			printf(1, "child %d\n", i + 1);
+			printf(1, "child\n", i + 1);
 			yield();
 		}
 	}
@@ -27,7 +27,7 @@ int main()
 		for(j = 0;j < 100;j++)
 		{
 			if(j == 99) wait();
-			printf(1, "parent %d\n", j + 1);
+			printf(1, "parent\n", j + 1);
 			yield();
 		}
 	}
