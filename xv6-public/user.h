@@ -26,6 +26,10 @@ int uptime(void);
 int myfunction(char*);
 int getppid(void);
 int yield(void);
+//PRIORITY_SCHED
+void setpriority(int, int);
+//MLFQ_SCHED
+int getlev(void);
 
 // ulib.c
 int stat(char*, struct stat*);

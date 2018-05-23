@@ -23,3 +23,7 @@
 #define SYS_myfunction 22
 #define SYS_getppid	23
 #define SYS_yield 24
+//PRIORITY_SCHED
+#define SYS_setpriority 25
+//MLFQ_SCHED
+#define SYS_getlev 26

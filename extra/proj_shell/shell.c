@@ -43,7 +43,6 @@ int tok_semi()	//token cmdline by semicolon first
 		if(!strcmp(quit, cmdtok[i - 1]))
 			exit(0);
 
-	
 		temp = strtok_r(NULL, Tok_semi, &ptr);
 	}
 

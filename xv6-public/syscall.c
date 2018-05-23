@@ -106,6 +106,10 @@ extern int sys_uptime(void);
 extern int sys_myfunction(void);
 extern int sys_getppid(void);
 extern int sys_yield(void);
+//PRIORITY_SCHED
+extern int sys_setpriority(void);
+//MLFQ_SCHED
+extern int sys_getlev(void);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -132,6 +136,10 @@ static int (*syscalls[])(void) = {
 [SYS_myfunction]	sys_myfunction,
 [SYS_getppid]	sys_getppid,
 [SYS_yield]		sys_yield,
+//PRIORITY_SCHED
+[SYS_setpriority]	sys_setpriority,
+//MLFQ_SCHED
+[SYS_getlev]	sys_getlev
 };
 
 void

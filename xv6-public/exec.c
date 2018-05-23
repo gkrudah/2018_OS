@@ -20,7 +20,7 @@ exec(char *path, char **argv)
   struct proc *curproc = myproc();
 
   begin_op();
-
+  
   if((ip = namei(path)) == 0){
     end_op();
     cprintf("exec: fail\n");
@@ -101,6 +101,7 @@ exec(char *path, char **argv)
   curproc->tf->esp = sp;
   switchuvm(curproc);
   freevm(oldpgdir);
+
   return 0;
 
  bad:

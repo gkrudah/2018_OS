@@ -32,3 +32,7 @@ SYSCALL(uptime)
 SYSCALL(myfunction)
 SYSCALL(getppid)
 SYSCALL(yield)
+//PRIORITY_SCHED
+SYSCALL(setpriority)
+//MLFQ_SCHED
+SYSCALL(getlev)
