@@ -68,6 +68,8 @@ char*           kalloc(void);
 void            kfree(char*);
 void            kinit1(void*, void*);
 void            kinit2(void*, void*);
+//proj3_COW
+int             get_n_free_pages();
 
 // kbd.c
 void            kbdintr(void);
@@ -120,12 +122,6 @@ void            userinit(void);
 int             wait(void);
 void            wakeup(void*);
 void            yield(void);
-//PRIORITY_SCHED
-void			setpriority(int, int);
-//MLFQ_SCHED
-int				getlev(void);
-int				moveMLFQ(int, struct proc *);
-void			boostMLFQ(void);
 
 // swtch.S
 void            swtch(struct context**, struct context*);
@@ -192,6 +188,7 @@ void            switchkvm(void);
 int             copyout(pde_t*, uint, void*, uint);
 void            clearpteu(pde_t *pgdir, char *uva);
 int				myfunction(char *str);
-
+//proj3_lazy_alloction
+int             pgflt_handler();
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

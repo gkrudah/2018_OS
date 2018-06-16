@@ -49,16 +49,6 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
-#if defined(FCFS_SCHED) || defined(PRIORITY_SCHED)
-  struct proc *prev;			//prev process
-  struct proc *next;			//next process
-#ifdef PRIORITY_SCHED
-  int priority;
-#endif
-#elif MLFQ_SCHED
-  int ticks;					//ticks used
-  int priority;
-#endif
 };
 
 // Process memory is laid out contiguously, low addresses first:
@@ -66,10 +56,3 @@ struct proc {
 //   original data and bss
 //   fixed-size stack
 //   expandable heap
-
-#ifdef MLFQ_SCHED
-struct MLFQueue {
-  int num;	//total process num in Q
-  struct proc *procinQ[NPROC];
-};
-#endif

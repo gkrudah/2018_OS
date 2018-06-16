@@ -6,9 +6,15 @@
 #include "mmu.h"
 #include "proc.h"
 #include "elf.h"
+#include "spinlock.h"
 
 extern char data[];  // defined by kernel.ld
 pde_t *kpgdir;  // for use in scheduler()
+//proj3_COW
+struct{
+  int count[PHYSTOP >> PGSHIFT];
+  struct spinlock lock;
+} pgref;
 
 // Set up CPU's kernel segment descriptors.
 // Run once on entry on each CPU.
@@ -27,6 +33,9 @@ seginit(void)
   c->gdt[SEG_UCODE] = SEG(STA_X|STA_R, 0, 0xffffffff, DPL_USER);
   c->gdt[SEG_UDATA] = SEG(STA_W, 0, 0xffffffff, DPL_USER);
   lgdt(c->gdt, sizeof(c->gdt));
+
+  //proj3_COW
+  initlock(&pgref.lock, "pgref");
 }
 
 // Return the address of the PTE in page table pgdir
@@ -244,7 +253,12 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
       kfree(mem);
       return 0;
     }
+
+    acquire(&pgref.lock);
+    pgref.count[V2P(mem) >> PGSHIFT]++;
+    release(&pgref.lock);
   }
+  
   return newsz;
 }
 
@@ -270,11 +284,29 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
       pa = PTE_ADDR(*pte);
       if(pa == 0)
         panic("kfree");
+
+      acquire(&pgref.lock);
+      if(pgref.count[pa >> PGSHIFT] >= 2) {
+        *pte &= ~PTE_P;
+        pgref.count[pa >> PGSHIFT]--;
+        release(&pgref.lock);
+        continue;
+      }
+      release(&pgref.lock);
+
       char *v = P2V(pa);
       kfree(v);
       *pte = 0;
+
+      acquire(&pgref.lock);
+      pgref.count[pa >> PGSHIFT]--;
+      release(&pgref.lock);
     }
   }
+
+  //proj3_COW
+  //pa = PTE_ADDR(*pte);
+ 
   return newsz;
 }
 
@@ -318,7 +350,6 @@ copyuvm(pde_t *pgdir, uint sz)
   pde_t *d;
   pte_t *pte;
   uint pa, i, flags;
-  char *mem;
 
   if((d = setupkvm()) == 0)
     return 0;
@@ -326,19 +357,36 @@ copyuvm(pde_t *pgdir, uint sz)
     if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
       panic("copyuvm: pte should exist");
     if(!(*pte & PTE_P))
-      panic("copyuvm: page not present");
+      continue;
+      //panic("copyuvm: page not present");
+    
+    *pte &= ~PTE_W;
     pa = PTE_ADDR(*pte);
     flags = PTE_FLAGS(*pte);
+
+    //proj3_COW
+    /*
     if((mem = kalloc()) == 0)
       goto bad;
     memmove(mem, (char*)P2V(pa), PGSIZE);
-    if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0)
+    */
+
+    if(mappages(d, (void*)i, PGSIZE, pa, flags) < 0)
       goto bad;
+    
+    //proj3_COW
+    acquire(&pgref.lock);
+    pgref.count[pa >> PGSHIFT]++;
+    release(&pgref.lock);
   }
+
+  lcr3(V2P(pgdir));
+
   return d;
 
 bad:
   freevm(d);
+  lcr3(V2P(pgdir));
   return 0;
 }
 
@@ -389,4 +437,69 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
 // Blank page.
 //PAGEBREAK!
 // Blank page.
+
+//proj3_lazy_allocation_COW
+int pgflt_handler()
+{
+  char *mem;
+  uint addr, pa;
+  pte_t *pte;
+
+  if((pte = walkpgdir(myproc()->pgdir, (void *)rcr2(), 0)) == 0)
+    goto Lazy_alloc;
+    //panic("copyuvm: pte should exist");
+  
+  pa = PTE_ADDR(*pte);
+  
+  if(*pte & PTE_P) {
+    //cprintf("refcount: %d\n", pgref.count[pa >> PGSHIFT]);
+    if(!(*pte & PTE_U)) {
+      cprintf("kernel page fault\n");
+      return -1;
+    }
+    else if(!(*pte & PTE_W)) {
+      if(pgref.count[pa >> PGSHIFT] >= 2) {
+        if((mem = kalloc()) == 0) {
+          cprintf("no_free_pages\n");
+          return -1;
+        }
+        memmove(mem, (char*)P2V(pa), PGSIZE);
+
+        *pte = V2P(mem) | PTE_P | PTE_U | PTE_W;
+        
+        acquire(&pgref.lock);
+        pgref.count[V2P(mem) >> PGSHIFT]++;
+        pgref.count[pa >> PGSHIFT]--;
+        release(&pgref.lock);
+      }
+      else
+        *pte |= PTE_W;
+    }
+  }
+  else {
+Lazy_alloc:
+    addr = PGROUNDDOWN(rcr2());
+
+    mem = kalloc();
+    if(mem == 0) {
+      cprintf("allocuvm out of memory\n");
+      return -1;
+    }
+
+    memset(mem, 0, PGSIZE);
+
+    if(mappages(myproc()->pgdir, (char*)addr, PGSIZE, V2P(mem), PTE_W|PTE_U) < 0) {
+      cprintf("allocuvm out of memory (2)\n");
+      kfree(mem);
+      return -1;
+    }
+    acquire(&pgref.lock);
+    pgref.count[V2P(mem) >> PGSHIFT]++;
+    release(&pgref.lock);
+  }
+
+  lcr3(V2P(myproc()->pgdir));
+
+  return 0;
+}
 

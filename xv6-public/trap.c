@@ -13,9 +13,6 @@ struct gatedesc idt[256];
 extern uint vectors[];  // in vectors.S: array of 256 entry pointers
 struct spinlock tickslock;
 uint ticks;
-#ifdef MLFQ_SCHED
-int MLFQ_ticks;
-#endif
 
 void
 tvinit(void)
@@ -81,10 +78,32 @@ trap(struct trapframe *tf)
             cpuid(), tf->cs, tf->eip);
     lapiceoi();
     break;
+  //proj3
+  case T_PGFLT:
+    if(rcr2() >= myproc()->sz) {
+      cprintf("out of proc sz\n");
+      cprintf("pid %d %s: trap %d err %d on cpu %d "
+              "eip 0x%x addr 0x%x--kill proc\n",
+              myproc()->pid, myproc()->name, tf->trapno,
+              tf->err, cpuid(), tf->eip, rcr2());
+
+      myproc()->killed = 1;
+    }
+    else { 
+      if(pgflt_handler()) {
+        cprintf("pid %d %s: trap %d err %d on cpu %d "
+                "eip 0x%x addr 0x%x--kill proc\n",
+                myproc()->pid, myproc()->name, tf->trapno,
+                tf->err, cpuid(), tf->eip, rcr2());
+
+        myproc()->killed = 1;
+      }
+    }
+    break;
   //user edit
   case T_user:
-	cprintf("user interrupt 128 called!\n");
-	break;
+	  cprintf("user interrupt 128 called!\n");
+	  break;
 
   //PAGEBREAK: 13
   default:
@@ -101,6 +120,7 @@ trap(struct trapframe *tf)
             tf->err, cpuid(), tf->eip, rcr2());
     myproc()->killed = 1;
   }
+
   // Force process exit if it has been killed and is in user space.
   // (If it is still executing in the kernel, let it keep running
   // until it gets to the regular system call return.)
@@ -110,45 +130,8 @@ trap(struct trapframe *tf)
   // Force process to give up CPU on clock tick.
   // If interrupts were on while locks held, would need to check nlock.
   if(myproc() && myproc()->state == RUNNING &&
-     tf->trapno == T_IRQ0+IRQ_TIMER){
-#ifdef MLFQ_SCHED
-	MLFQ_ticks++;
-	myproc()->ticks++;
-	switch(myproc()->priority){
-	  case 0:
-		if(myproc()->ticks >= 2){
-		  if(moveMLFQ(1, myproc()) < 0)
-			panic("MLFQ level up 1 error!");
-		  yield();
-		}
-
-		break;
-	  case 1:
-		if(myproc()->ticks >= 4){
-		  if(moveMLFQ(2, myproc()) < 0)
-			panic("MLFQ level up 2 error!");
-		  yield();
-		}
-
-		break;
-	  case 2:
-		if(myproc()->ticks >= 8){
-		  yield();
-		}
-		break;
-	  default:
-	    panic("illegal priority!");
-	}
-
-	if(MLFQ_ticks >= 100){
-	  MLFQ_ticks = 0;
-	  boostMLFQ();
-	  yield();
-	}
-#else
+     tf->trapno == T_IRQ0+IRQ_TIMER)
     yield();
-#endif
-  }
 
   // Check if the process has been killed since we yielded
   if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)

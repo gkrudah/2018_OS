@@ -10,23 +10,7 @@
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
-#if defined(FCFS_SCHED) || defined(PRIORITY_SCHED)
-  int procnum;
-  struct proc *tail;
-#ifdef PRIORITY_SCHED
-  struct proc *priorityP[NPROC];
-#endif
-#endif
 } ptable;
-
-#ifdef MLFQ_SCHED
-struct MLFQueue MLFQ[3];
-
-int EnMLFQ(int, struct proc *);
-int DeMLFQ(struct proc *);
-int moveMLFQ(int, struct proc *);
-void boostMLFQ(void);
-#endif
 
 static struct proc *initproc;
 
@@ -35,32 +19,6 @@ extern void forkret(void);
 extern void trapret(void);
 
 static void wakeup1(void *chan);
-
-void
-setpriority(int pid, int priority)
-{
-#ifdef PRIORITY_SCHED
-  struct proc *p;
-  
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
-	if(p->pid == pid) {
-	  acquire(&ptable.lock);
-	  p->priority = priority;
-	  release(&ptable.lock);
-	}
-  }
-#endif
-}
-
-int
-getlev(void)
-{
-#ifdef MLFQ_SCHED
-  return myproc()->priority;
-#else
-  return 0;
-#endif
-}
 
 void
 pinit(void)
@@ -120,28 +78,14 @@ allocproc(void)
 
   acquire(&ptable.lock);
 
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->state == UNUSED){
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    if(p->state == UNUSED)
       goto found;
-	}
-  }
 
   release(&ptable.lock);
   return 0;
 
 found:
-
-#if defined(FCFS_SCHED) || defined(PRIORITY_SCHED)
-  p->prev = 0;
-  p->next = 0;
-  ptable.procnum++;
-
-#ifdef PRIORITY_SCHED
-  p->priority = 0;
-#endif
-
-#endif
-
   p->state = EMBRYO;
   p->pid = nextpid++;
 
@@ -168,10 +112,6 @@ found:
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
 
-#ifdef MLFQ_SCHED
-  EnMLFQ(0, p);
-#endif
-
   return p;
 }
 
@@ -182,30 +122,6 @@ userinit(void)
 {
   struct proc *p;
   extern char _binary_initcode_start[], _binary_initcode_size[];
-
-#ifdef FCFS_SCHED
-  cprintf("FCFS_SCHED!\n");
-#elif PRIORITY_SCHED
-  cprintf("PRIORITY_SCHED!\n");
-#elif MLFQ_SCHED
-  cprintf("MLFQ_SCHED!\n");
-#else
-  cprintf("DEFAULT : RR!\n");
-#endif
-
-#if defined(FCFS_SCHED) || defined(PRIORITY_SCHED)
-  ptable.procnum = 0;
-#endif
-
-#ifdef MLFQ_SCHED
-  int i, j = 0;
-
-  for(i = 0;i < 3;i++){
-	MLFQ[i].num = 0;
-	for(j = 0;j < NPROC;j++)
-	  MLFQ[i].procinQ[j] = 0;
-  }
-#endif
 
   p = allocproc();
   
@@ -226,11 +142,6 @@ userinit(void)
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
 
-#if defined(FCFS_SCHED) || defined(PRIORITY_SCHED)
-  p->prev = 0;
-  p->next = 0;
-  ptable.tail = p;
-#endif
   // this assignment to p->state lets other cores
   // run this process. the acquire forces the above
   // writes to be visible, and the lock is also needed
@@ -252,8 +163,9 @@ growproc(int n)
 
   sz = curproc->sz;
   if(n > 0){
-    if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
-      return -1;
+    sz += n;
+    //if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
+      //return -1;
   } else if(n < 0){
     if((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)
       return -1;
@@ -303,13 +215,6 @@ fork(void)
 
   acquire(&ptable.lock);
 
-#if defined(FCFS_SCHED) || defined(PRIORITY_SCHED)
-  np->prev = ptable.tail;
-  ptable.tail->next = np;
-  np->next = 0;
-  ptable.tail = np;
-#endif
-
   np->state = RUNNABLE;
 
   release(&ptable.lock);
@@ -343,25 +248,7 @@ exit(void)
   end_op();
   curproc->cwd = 0;
 
-#if defined(FCFS_SCHED) || defined(PRIORITY_SCHED)
-  if(curproc->next == 0)
-    ptable.tail = curproc->prev;
-  else
-	curproc->next->prev = curproc->prev;
-
-  curproc->prev->next = curproc->next;
-
-  curproc->prev = 0;
-  curproc->next = 0;
-
-  ptable.procnum--;
-#endif
-
   acquire(&ptable.lock);
-
-#ifdef MLFQ_SCHED
-  DeMLFQ(curproc);
-#endif
 
   // Parent might be sleeping in wait().
   wakeup1(curproc->parent);
@@ -440,141 +327,17 @@ scheduler(void)
   struct cpu *c = mycpu();
   c->proc = 0;
   
-#ifdef PRIORITY_SCHED
-  int i, priority = 0;
-  struct proc **tmp;
-#elif MLFQ_SCHED
-  int i, j = 0;
-  struct proc **tmp;
-#endif
-
   for(;;){
     // Enable interrupts on this processor.
     sti();
 
-#ifdef PRIORITY_SCHED
-	i = 0; priority = 0;
-#elif MLFQ_SCHED
-	i = 0;
-#endif
-
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-#ifdef FCFS_SCHED
-	for(p = ptable.proc;;){
-	  if(p->state != RUNNABLE){
-		if(p->next == 0)
-		  break;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->state != RUNNABLE)
+        continue;
 
-		p = p->next;
-		continue;
-	  }
-
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
-
-      c->proc = 0;
-
-	  if(p->next == 0)
-		break;
-    }
-#elif PRIORITY_SCHED
-	for(p = ptable.proc;;){
-	  if(p->state != RUNNABLE){
-		if((p->next == 0))
-		  break;
-
-		p = p->next;
-		continue;
-	  }
-
-	  if(p->priority >= priority)
-		priority = p->priority;
-
-	  if(p->next != 0)
-		p = p->next;
-	  else
-		break;
-	}
-	
-	for(p = ptable.proc;;){
-	  if(p->state != RUNNABLE){
-		if((p->next == 0))
-		  break;
-
-		p = p->next;
-		continue;
-	  }
-
-	  if(p->priority == priority)
-		ptable.priorityP[i++] = p;
-	 
-	  if(p->next != 0)
-		p = p->next;
-	  else
-		break;
-	}
-	
-	for(tmp = ptable.priorityP; tmp < &ptable.priorityP[i]; tmp++){
-	  p = *tmp;
-	  if(p->state != RUNNABLE){
-		//j++;
-		continue;
-	  }
-	  //cprintf("j : %d\n", j);
-	  //j++;
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
-
-      c->proc = 0;
-    }
-#elif MLFQ_SCHED
-	for(i = 0; i < 3;){
-	  j = 0;
-
-	  if(MLFQ[i].num == 0){
-		i++;
-		continue;
-	  }
-	  
-	  for(tmp = MLFQ[i].procinQ; tmp < &MLFQ[i].procinQ[NPROC]; tmp++){
-		if(*tmp == 0)
-		  continue;
-
-		p = *tmp;
- 		if(p->state != RUNNABLE){
-		  j++;
-		  continue;
-		}
-
-      	c->proc = p;
-     	switchuvm(p);
-      	p->state = RUNNING;
-
-      	swtch(&(c->scheduler), p->context);
-      	switchkvm();
-
-      	c->proc = 0;
-		p->ticks = 0;
-	  }
-
-	  if(j == MLFQ[i].num)
-		i++;
-	}
-#else
-	for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-	  if(p->state != RUNNABLE)
-		continue;
-
-	  // Switch to chosen process.  It is the process's job
+      // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
       c->proc = p;
@@ -588,11 +351,11 @@ scheduler(void)
       // It should have changed its p->state before coming back.
       c->proc = 0;
     }
-#endif
     release(&ptable.lock);
+
   }
 }
-      
+
 // Enter scheduler.  Must hold only ptable.lock
 // and have changed proc->state. Saves and restores
 // intena because intena is a property of this
@@ -770,74 +533,3 @@ procdump(void)
     cprintf("\n");
   }
 }
-
-#ifdef MLFQ_SCHED
-//push process to prior level Q
-//return -1 when error, else 0
-int
-EnMLFQ(int priority, struct proc *p)
-{
-  int i = 0;
-
-  if((priority > 2) || (priority < 0))
-	return -1;
-
-  if(MLFQ[priority].num >= NPROC)
-	return -1;
-
-  for(i = 0; i < NPROC; i++){
-	if(MLFQ[priority].procinQ[i] == 0){
-	  MLFQ[priority].num++;
-	  MLFQ[priority].procinQ[i] = p;
-	  p->priority = priority;
-	  p->ticks = 0;
-	  return 0;
-	}
-  }
-  cprintf("EnMLFQ error\n");
-  return -1;
-}
-
-//pop process
-//return 0 when pop success, else -1
-int
-DeMLFQ(struct proc *p)
-{
-  int priority = p->priority, i = 0;
-
-  for(i = 0; i < NPROC; i++){
-	if(MLFQ[priority].procinQ[i] == p){
-	  MLFQ[priority].num--;
-	  MLFQ[priority].procinQ[i] = 0;
-	  p->ticks = 0;
-	  return 0;
-	}
-  }
-  cprintf("DEMLFQ error\n");
-  return -1;
-}
-
-//move process to target level Q
-//return -1 when error, else 0
-int
-moveMLFQ(int priority, struct proc *p)
-{
-  if(DeMLFQ(p) < 0)
-	return -1;
-
-  return EnMLFQ(priority, p);
-}
-
-void
-boostMLFQ(void)
-{
-  struct proc *p;
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if((p->state < SLEEPING) || (p->state > RUNNING))
-	  continue;
-	if(moveMLFQ(0, p) < 0)
-	  panic("boost error!");
-  }
-}
-#endif
-
